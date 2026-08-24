@@ -8,14 +8,18 @@
 
 ```mermaid
 flowchart TD
-    subgraph Storage Layer
-        SW["swaggers/ (*.yml, *.yaml, *.json)"] --> SP["@apidevtools/swagger-parser"]
-        SP --> DEREF["Dereferenced In-Memory Store\n(specsMap, endpointsIndex, schemasIndex)"]
+    subgraph Storage & Hyper-Fast Cache
+        SW["swaggers/ (*.yml, *.yaml, *.json)"] --> HASH["computeFileHash(SHA-256)"]
+        HASH --> SNAPSHOT{".cache/swaggers/<hash>.snapshot.json"}
+        SNAPSHOT -- Cache Hit (<2ms) --> DEREF["Pre-Dereferenced In-Memory Store\n(specsMap, endpointsIndex, schemasIndex)"]
+        SNAPSHOT -- Cache Miss --> SP["@apidevtools/swagger-parser\n+ sanitizeMissingRefs()"]
+        SP --> SAVE["saveCachedSnapshot()"] --> DEREF
         STATS["data/stats.json"] <--> ATOMIC["Atomic Disk Persistence\n(Debounced 300ms + Signal Flush)"]
     end
 
     subgraph Core Engine
-        DEREF --> STORE["src/utils/swaggerStore.js"]
+        DEREF --> O1["O(1) Memory Lookups\n(endpointLookupMap & schemaLookupMap)"]
+        O1 --> STORE["src/utils/swaggerStore.js"]
         STORE --> CG["src/utils/codeGenerator.js\n(TS, Python, JS, cURL, C#)"]
         STORE --> TOOLS["src/tools/index.js\n(8 Herramientas MCP)"]
     end

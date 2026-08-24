@@ -12,6 +12,7 @@ Para guías especializadas y diagramas completos, consulta:
 - 🏛️ [**Guía de Arquitectura del Sistema** (`docs/ARCHITECTURE.md`)](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/docs/ARCHITECTURE.md): Diagramas de flujo, Session Binding, observabilidad, persistencia atómica y Circuit Breaker.
 - 🛠️ [**Referencia de Herramientas MCP** (`docs/TOOLS_REFERENCE.md`)](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/docs/TOOLS_REFERENCE.md): Detalle exhaustivo de parámetros, esquemas JSON y ejemplos de respuesta de cada herramienta.
 - 📂 [**Guía de Archivos Swagger / OpenAPI** (`docs/SWAGGER_GUIDE.md`)](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/docs/SWAGGER_GUIDE.md): Instrucciones para añadir, validar y organizar especificaciones `.yml` y `.json`.
+- 📋 [**Especificación Estructural Doters API Internal** (`docs/MIDDLEWARE_INTERNAL_SPEC.md`)](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/docs/MIDDLEWARE_INTERNAL_SPEC.md): Análisis de los 110 endpoints, 221 DTOs, envoltorios de respuesta y 25 dominios de `middleware-internal.json`.
 
 ---
 

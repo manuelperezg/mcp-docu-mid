@@ -1,13 +1,102 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import SwaggerParser from '@apidevtools/swagger-parser';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { NotFoundError, ValidationError } from '../errors/index.js';
 
+const CACHE_DIR = path.resolve(process.cwd(), '.cache/swaggers');
+
 const specsMap = new Map();
 let endpointsIndex = [];
 let schemasIndex = [];
+
+// Índices en memoria O(1)
+const endpointLookupMap = new Map();
+const schemaLookupMap = new Map();
+
+let cacheStats = {
+  hits: 0,
+  misses: 0,
+  totalSavedMs: 0
+};
+
+function ensureCacheDir() {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+}
+
+function computeFileHash(filePath) {
+  const stat = fs.statSync(filePath);
+  const fileBuffer = fs.readFileSync(filePath);
+  return crypto
+    .createHash('sha256')
+    .update(fileBuffer)
+    .update(String(stat.size))
+    .update(String(stat.mtimeMs))
+    .digest('hex');
+}
+
+function getCacheFilePath(specId, hash) {
+  return path.join(CACHE_DIR, `${specId}-${hash.substring(0, 16)}.snapshot.json`);
+}
+
+function loadCachedSnapshot(specId, hash) {
+  try {
+    const cacheFile = getCacheFilePath(specId, hash);
+    if (fs.existsSync(cacheFile)) {
+      const content = fs.readFileSync(cacheFile, 'utf8');
+      const snapshot = JSON.parse(content);
+      if (snapshot.hash === hash && snapshot.specEntry && snapshot.endpoints && snapshot.schemas) {
+        return snapshot;
+      }
+    }
+  } catch (err) {
+    logger.warn({ specId, error: err.message }, 'No se pudo leer el snapshot de caché; se procederá a dereferenciar');
+  }
+  return null;
+}
+
+function saveCachedSnapshot(specId, hash, snapshotData) {
+  try {
+    ensureCacheDir();
+    const cacheFile = getCacheFilePath(specId, hash);
+    const tempFile = `${cacheFile}.tmp-${Date.now()}`;
+    const payload = JSON.stringify({
+      hash,
+      specId,
+      cachedAt: new Date().toISOString(),
+      ...snapshotData
+    });
+    fs.writeFileSync(tempFile, payload, 'utf8');
+    fs.renameSync(tempFile, cacheFile);
+  } catch (err) {
+    logger.warn({ specId, error: err.message }, 'Error al guardar el snapshot en caché');
+  }
+}
+
+export function clearSwaggerCache() {
+  try {
+    if (fs.existsSync(CACHE_DIR)) {
+      const files = fs.readdirSync(CACHE_DIR);
+      for (const file of files) {
+        if (file.endsWith('.snapshot.json')) {
+          fs.unlinkSync(path.join(CACHE_DIR, file));
+        }
+      }
+    }
+    cacheStats = { hits: 0, misses: 0, totalSavedMs: 0 };
+    logger.info('Caché de snapshots de Swagger eliminada correctamente');
+  } catch (err) {
+    logger.error({ error: err.message }, 'Error al limpiar caché de Swagger');
+  }
+}
+
+export function getCacheStats() {
+  return { ...cacheStats };
+}
 
 function findSwaggerFiles(dirPath) {
   const resolved = path.resolve(process.cwd(), dirPath);
@@ -33,113 +122,236 @@ function findSwaggerFiles(dirPath) {
   return results;
 }
 
-export async function loadAllSwaggers(dir = config.swaggersDir) {
+function sanitizeMissingRefs(apiObj) {
+  if (!apiObj || typeof apiObj !== 'object') return;
+  if (!apiObj.components) apiObj.components = {};
+  if (!apiObj.components.schemas) apiObj.components.schemas = {};
+
+  const schemas = apiObj.components.schemas;
+
+  function traverse(node) {
+    if (!node || typeof node !== 'object') return;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === '$ref' && typeof v === 'string') {
+        if (v.startsWith('#/components/schemas/')) {
+          const schemaName = v.replace('#/components/schemas/', '');
+          if (!schemas[schemaName]) {
+            schemas[schemaName] = {
+              type: 'object',
+              description: `Auto-generated stub for ${schemaName}`
+            };
+          }
+        }
+      } else {
+        traverse(v);
+      }
+    }
+  }
+
+  traverse(apiObj);
+}
+
+async function processSingleSwaggerFile(filePath, forceReload = false) {
+  const fileName = path.basename(filePath);
+  const specId = path.parse(fileName).name.toLowerCase();
+  const fileHash = computeFileHash(filePath);
+
+  const fileStart = performance.now();
+
+  // 1. Intentar cargar desde Snapshot Cache si no es forceReload
+  if (!forceReload) {
+    const cached = loadCachedSnapshot(specId, fileHash);
+    if (cached) {
+      cacheStats.hits++;
+      const duration = (performance.now() - fileStart).toFixed(2);
+      logger.info({ specId, durationMs: duration, source: 'CACHE_SNAPSHOT' }, 'Swagger cargado hiper-rápido desde snapshot en caché');
+      return {
+        specEntry: cached.specEntry,
+        endpoints: cached.endpoints,
+        schemas: cached.schemas,
+        fromCache: true
+      };
+    }
+  }
+
+  cacheStats.misses++;
+  logger.info({ specId, filePath, source: 'FULL_PARSE' }, 'Parseando y dereferenciando archivo OpenAPI');
+
+  let parsedSpec;
+  if (filePath.endsWith('.json')) {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    parsedSpec = JSON.parse(fileContent);
+  } else {
+    parsedSpec = await SwaggerParser.parse(filePath);
+  }
+
+  // Sanitizar referencias internas faltantes antes del dereference
+  sanitizeMissingRefs(parsedSpec);
+
+  // Dereference completo usando @apidevtools/swagger-parser
+  const api = await SwaggerParser.dereference(parsedSpec);
+
+  const title = api.info?.title || fileName;
+  const version = api.info?.version || '1.0.0';
+  const description = api.info?.description || '';
+  const openapiVersion = api.openapi || api.swagger || '3.0.0';
+  const servers = api.servers || [];
+  const securitySchemes = api.components?.securitySchemes || api.securityDefinitions || {};
+
+  const paths = api.paths || {};
+  const componentsSchemas = api.components?.schemas || api.definitions || {};
+
+  const specEntry = {
+    id: specId,
+    fileName,
+    filePath: path.relative(process.cwd(), filePath),
+    title,
+    version,
+    description,
+    openapiVersion,
+    servers,
+    securitySchemes,
+    pathsCount: Object.keys(paths).length,
+    schemasCount: Object.keys(componentsSchemas).length,
+    rawSpec: api
+  };
+
+  const fileEndpoints = [];
+  const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+
+  for (const [routePath, pathItem] of Object.entries(paths)) {
+    if (!pathItem || typeof pathItem !== 'object') continue;
+
+    for (const method of methods) {
+      const operation = pathItem[method];
+      if (!operation || typeof operation !== 'object') continue;
+
+      fileEndpoints.push({
+        specId,
+        specTitle: title,
+        servers,
+        path: routePath,
+        method: method.toUpperCase(),
+        operationId: operation.operationId || `${method}_${routePath}`,
+        summary: operation.summary || '',
+        description: operation.description || '',
+        tags: operation.tags || [],
+        parameters: operation.parameters || pathItem.parameters || [],
+        requestBody: operation.requestBody || null,
+        responses: operation.responses || {},
+        deprecated: Boolean(operation.deprecated),
+        security: operation.security || api.security || []
+      });
+    }
+  }
+
+  const fileSchemas = [];
+  for (const [schemaName, schemaObj] of Object.entries(componentsSchemas)) {
+    if (!schemaObj || typeof schemaObj !== 'object') continue;
+
+    fileSchemas.push({
+      specId,
+      specTitle: title,
+      schemaName,
+      type: schemaObj.type || 'object',
+      description: schemaObj.description || '',
+      properties: schemaObj.properties || {},
+      required: schemaObj.required || [],
+      enum: schemaObj.enum || null,
+      rawSchema: schemaObj
+    });
+  }
+
+  // Guardar en caché snapshot para futuros arranques instantáneos
+  saveCachedSnapshot(specId, fileHash, {
+    specEntry,
+    endpoints: fileEndpoints,
+    schemas: fileSchemas
+  });
+
+  const duration = (performance.now() - fileStart).toFixed(2);
+  logger.info({ specId, durationMs: duration, paths: specEntry.pathsCount, schemas: specEntry.schemasCount }, 'Swagger dereferenciado y snapshot guardado en caché');
+
+  return {
+    specEntry,
+    endpoints: fileEndpoints,
+    schemas: fileSchemas,
+    fromCache: false
+  };
+}
+
+export async function loadAllSwaggers(dir = config.swaggersDir, options = {}) {
+  const startTime = performance.now();
   const filePaths = findSwaggerFiles(dir);
+  const force = Boolean(options.force);
+
   specsMap.clear();
   endpointsIndex = [];
   schemasIndex = [];
+  endpointLookupMap.clear();
+  schemaLookupMap.clear();
 
-  logger.info({ dir, filesFound: filePaths.length }, 'Iniciando escaneo y dereference de archivos Swagger/OpenAPI');
+  logger.info({ dir, filesFound: filePaths.length, force }, 'Iniciando carga concurrente e hiper-rápida de especificaciones OpenAPI');
 
-  for (const filePath of filePaths) {
-    try {
-      const fileName = path.basename(filePath);
-      const specId = path.parse(fileName).name.toLowerCase();
+  // Procesamiento concurrente de todos los archivos
+  const results = await Promise.all(
+    filePaths.map(filePath =>
+      processSingleSwaggerFile(filePath, force).catch(err => {
+        logger.error({ filePath, error: err.message }, 'Error al procesar archivo Swagger/OpenAPI');
+        return null;
+      })
+    )
+  );
 
-      // Dereference completo usando @apidevtools/swagger-parser
-      const api = await SwaggerParser.dereference(filePath);
+  // Hidratar estructuras e índices O(1)
+  for (const result of results) {
+    if (!result) continue;
 
-      const title = api.info?.title || fileName;
-      const version = api.info?.version || '1.0.0';
-      const description = api.info?.description || '';
-      const openapiVersion = api.openapi || api.swagger || '3.0.0';
-      const servers = api.servers || [];
-      const securitySchemes = api.components?.securitySchemes || api.securityDefinitions || {};
+    const { specEntry, endpoints, schemas } = result;
+    specsMap.set(specEntry.id, specEntry);
 
-      const paths = api.paths || {};
-      const componentsSchemas = api.components?.schemas || api.definitions || {};
-
-      const specEntry = {
-        id: specId,
-        fileName,
-        filePath: path.relative(process.cwd(), filePath),
-        title,
-        version,
-        description,
-        openapiVersion,
-        servers,
-        securitySchemes,
-        pathsCount: Object.keys(paths).length,
-        schemasCount: Object.keys(componentsSchemas).length,
-        rawSpec: api
-      };
-
-      specsMap.set(specId, specEntry);
-
-      // Indexar Endpoints (Totalmente dereferenciados)
-      for (const [routePath, pathItem] of Object.entries(paths)) {
-        if (!pathItem || typeof pathItem !== 'object') continue;
-
-        const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
-        for (const method of methods) {
-          const operation = pathItem[method];
-          if (!operation || typeof operation !== 'object') continue;
-
-          endpointsIndex.push({
-            specId,
-            specTitle: title,
-            servers,
-            path: routePath,
-            method: method.toUpperCase(),
-            operationId: operation.operationId || `${method}_${routePath}`,
-            summary: operation.summary || '',
-            description: operation.description || '',
-            tags: operation.tags || [],
-            parameters: operation.parameters || pathItem.parameters || [],
-            requestBody: operation.requestBody || null,
-            responses: operation.responses || {},
-            deprecated: Boolean(operation.deprecated),
-            security: operation.security || api.security || []
-          });
-        }
+    for (const ep of endpoints) {
+      endpointsIndex.push(ep);
+      const exactKey = `${ep.specId}:${ep.method}:${ep.path.toLowerCase()}`;
+      const generalKey = `${ep.method}:${ep.path.toLowerCase()}`;
+      endpointLookupMap.set(exactKey, ep);
+      if (!endpointLookupMap.has(generalKey)) {
+        endpointLookupMap.set(generalKey, ep);
       }
+    }
 
-      // Indexar Schemas / Modelos de Datos (Totalmente dereferenciados)
-      for (const [schemaName, schemaObj] of Object.entries(componentsSchemas)) {
-        if (!schemaObj || typeof schemaObj !== 'object') continue;
-
-        schemasIndex.push({
-          specId,
-          specTitle: title,
-          schemaName,
-          type: schemaObj.type || 'object',
-          description: schemaObj.description || '',
-          properties: schemaObj.properties || {},
-          required: schemaObj.required || [],
-          enum: schemaObj.enum || null,
-          rawSchema: schemaObj
-        });
+    for (const sc of schemas) {
+      schemasIndex.push(sc);
+      const exactKey = `${sc.specId}:${sc.schemaName.toLowerCase()}`;
+      const generalKey = `${sc.schemaName.toLowerCase()}`;
+      schemaLookupMap.set(exactKey, sc);
+      if (!schemaLookupMap.has(generalKey)) {
+        schemaLookupMap.set(generalKey, sc);
       }
-
-      logger.info({ specId, title, version, paths: specEntry.pathsCount, schemas: specEntry.schemasCount }, 'Swagger dereferenciado y cargado en memoria');
-    } catch (error) {
-      logger.error({ filePath, error: error.message }, 'Error al dereferenciar archivo Swagger/OpenAPI');
     }
   }
+
+  const totalDuration = (performance.now() - startTime).toFixed(2);
 
   logger.info(
     {
       totalSpecs: specsMap.size,
       totalEndpoints: endpointsIndex.length,
-      totalSchemas: schemasIndex.length
+      totalSchemas: schemasIndex.length,
+      durationMs: totalDuration,
+      cacheHits: cacheStats.hits,
+      cacheMisses: cacheStats.misses
     },
-    'Carga y aprendizaje de documentación Swagger completado con éxito'
+    'Carga hiper-rápida de documentación OpenAPI completada con éxito'
   );
 
   return {
     specsCount: specsMap.size,
     endpointsCount: endpointsIndex.length,
-    schemasCount: schemasIndex.length
+    schemasCount: schemasIndex.length,
+    durationMs: totalDuration,
+    cacheHits: cacheStats.hits,
+    cacheMisses: cacheStats.misses
   };
 }
 
@@ -171,6 +383,7 @@ export function searchDocs({ query, specId = null, tag = null, limit = 10 }) {
   }
 
   const q = query.toLowerCase().trim();
+  const tokens = q.split(/\s+/).filter(t => t.length > 2);
   const maxLimit = Math.min(Math.max(parseInt(limit || '10', 10), 1), 50);
 
   let endpointMatches = endpointsIndex;
@@ -187,24 +400,18 @@ export function searchDocs({ query, specId = null, tag = null, limit = 10 }) {
     endpointMatches = endpointMatches.filter(e => e.tags.some(tagItem => tagItem.toLowerCase().includes(t)));
   }
 
-  // Filtrar endpoints por query
+  // Filtrar endpoints por query completa o tokens
   const matchedEndpoints = endpointMatches.filter(e => {
-    return (
-      e.path.toLowerCase().includes(q) ||
-      e.summary.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.operationId.toLowerCase().includes(q) ||
-      e.tags.some(tagItem => tagItem.toLowerCase().includes(q))
-    );
+    const fullText = `${e.path} ${e.summary} ${e.description} ${e.operationId} ${e.tags.join(' ')}`.toLowerCase();
+    if (fullText.includes(q)) return true;
+    return tokens.length > 0 && tokens.some(token => fullText.includes(token));
   });
 
-  // Filtrar schemas por query
+  // Filtrar schemas por query completa o tokens
   const matchedSchemas = schemaMatches.filter(s => {
-    return (
-      s.schemaName.toLowerCase().includes(q) ||
-      s.description.toLowerCase().includes(q) ||
-      Object.keys(s.properties).some(prop => prop.toLowerCase().includes(q))
-    );
+    const fullText = `${s.schemaName} ${s.description} ${Object.keys(s.properties).join(' ')}`.toLowerCase();
+    if (fullText.includes(q)) return true;
+    return tokens.length > 0 && tokens.some(token => fullText.includes(token));
   });
 
   return {
@@ -238,12 +445,24 @@ export function getEndpointDoc({ path: routePath, method = 'GET', specId = null 
     throw new ValidationError('El parámetro "path" es requerido.');
   }
 
-  const normalizedPath = routePath.trim();
+  const normalizedPath = routePath.trim().toLowerCase();
   const normalizedMethod = (method || 'GET').toUpperCase().trim();
 
+  // Búsqueda instantánea O(1)
+  if (specId) {
+    const exactKey = `${String(specId).toLowerCase()}:${normalizedMethod}:${normalizedPath}`;
+    const found = endpointLookupMap.get(exactKey);
+    if (found) return found;
+  } else {
+    const generalKey = `${normalizedMethod}:${normalizedPath}`;
+    const found = endpointLookupMap.get(generalKey);
+    if (found) return found;
+  }
+
+  // Fallback con escaneo si hay variantes de formato
   let candidates = endpointsIndex.filter(e => {
     const methodMatch = e.method === normalizedMethod;
-    const pathMatch = e.path.toLowerCase() === normalizedPath.toLowerCase() || e.path === normalizedPath;
+    const pathMatch = e.path.toLowerCase() === normalizedPath;
     return methodMatch && pathMatch;
   });
 
@@ -254,7 +473,7 @@ export function getEndpointDoc({ path: routePath, method = 'GET', specId = null 
 
   if (candidates.length === 0) {
     throw new NotFoundError(
-      `No se encontró el endpoint '${normalizedMethod} ${normalizedPath}'${specId ? ` en el spec '${specId}'` : ''}.`
+      `No se encontró el endpoint '${normalizedMethod} ${routePath.trim()}'${specId ? ` en el spec '${specId}'` : ''}.`
     );
   }
 
@@ -268,6 +487,17 @@ export function getSchemaDoc({ schemaName, specId = null }) {
 
   const normalizedName = schemaName.trim().toLowerCase();
 
+  // Búsqueda instantánea O(1)
+  if (specId) {
+    const exactKey = `${String(specId).toLowerCase()}:${normalizedName}`;
+    const found = schemaLookupMap.get(exactKey);
+    if (found) return found;
+  } else {
+    const found = schemaLookupMap.get(normalizedName);
+    if (found) return found;
+  }
+
+  // Fallback con escaneo
   let candidates = schemasIndex.filter(s => s.schemaName.toLowerCase() === normalizedName);
 
   if (specId) {
@@ -378,6 +608,7 @@ export function getStoreStats() {
     specsCount: specsMap.size,
     endpointsCount: endpointsIndex.length,
     schemasCount: schemasIndex.length,
+    cache: getCacheStats(),
     specs: getLoadedSpecs()
   };
 }
@@ -386,4 +617,6 @@ export function clearStoreForTests() {
   specsMap.clear();
   endpointsIndex = [];
   schemasIndex = [];
+  endpointLookupMap.clear();
+  schemaLookupMap.clear();
 }

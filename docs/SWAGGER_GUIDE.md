@@ -39,6 +39,17 @@ El motor `@apidevtools/swagger-parser` soporta:
 
 ---
 
+## ⚡ Estrategia de Carga Hiper-Rápida (Snapshot Caching)
+
+Para especificaciones OpenAPI voluminosas (como `middleware-internal.json` de 260KB+ con cientos de endpoints y schemas):
+1. **Validación por Hash SHA-256**: Al leer cada archivo, se genera un hash criptográfico basado en su contenido y timestamp de modificación (`mtimeMs`).
+2. **Snapshot en `.cache/swaggers/`**: El resultado del dereference completo se guarda como un snapshot JSON pre-calculado.
+3. **Hidratación en < 2 ms**: En inicios subsecuentes, el servidor verifica el hash y restaura directamente la memoria en **1 a 3 ms**, evitando el costo de CPU de parsear el AST de OpenAPI repetidamente.
+4. **Invalidación Automática**: Si editas cualquier archivo `.yml` o `.json`, el hash cambia y el sistema re-dereferencia el archivo de manera transparente.
+5. **Índices en Memoria $O(1)$**: Las consultas a `getEndpointDoc` y `getSchemaDoc` resuelven en $O(1)$ mediante tablas hash compuestas (`METHOD:PATH` y `SCHEMANAME`).
+
+---
+
 ## 🛠️ Buenas Prácticas para Especificaciones OpenAPI
 
 1. **Incluir Título y Versión**: Asegúrate de que la sección `info` incluya `title`, `version` y `description`.

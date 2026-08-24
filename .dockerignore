@@ -5,3 +5,5 @@ coverage
 tests
 .git
 .agents
+.cache
+data/*.json

@@ -6,7 +6,7 @@ import {
   validatePayloadHandler,
   queryApiKnowledgeHandler
 } from '../src/tools/documentation/handler.js';
-import { loadAllSwaggers } from '../src/utils/swaggerStore.js';
+import { loadAllSwaggers, clearSwaggerCache } from '../src/utils/swaggerStore.js';
 
 function calculatePercentile(sortedArray, percentile) {
   if (sortedArray.length === 0) return 0;
@@ -16,21 +16,32 @@ function calculatePercentile(sortedArray, percentile) {
 
 async function runBenchmark() {
   console.log('================================================================');
-  console.log('  MCP-DOC-MID: SWAGGER & CODE GEN BENCHMARK PERFORMANCE');
+  console.log('  MCP-DOC-MID: HYPER-FAST SWAGGER & CODE GEN BENCHMARK');
   console.log('================================================================\n');
 
-  console.log('Cargando y dereferenciando archivos Swagger en memoria...');
-  const initStart = performance.now();
-  const storeInfo = await loadAllSwaggers('swaggers');
-  const initDuration = (performance.now() - initStart).toFixed(2);
-  console.log(`Specs cargados: ${storeInfo.specsCount} | Endpoints: ${storeInfo.endpointsCount} | Schemas: ${storeInfo.schemasCount} (en ${initDuration}ms)\n`);
+  // 1. Benchmark de Cold Start (Sin Caché)
+  console.log('1. Probando COLD START (dereferenciación completa de 140+ endpoints)...');
+  clearSwaggerCache();
+  const coldStartTimer = performance.now();
+  const coldStoreInfo = await loadAllSwaggers('swaggers', { force: true });
+  const coldDuration = (performance.now() - coldStartTimer).toFixed(2);
+  console.log(`   -> Cold Start: ${coldDuration} ms (${coldStoreInfo.specsCount} specs, ${coldStoreInfo.endpointsCount} endpoints, ${coldStoreInfo.schemasCount} schemas)\n`);
 
+  // 2. Benchmark de Warm Cached Start (Snapshot Cache)
+  console.log('2. Probando WARM CACHED START (hidratación instantánea de snapshots)...');
+  const warmStartTimer = performance.now();
+  const warmStoreInfo = await loadAllSwaggers('swaggers');
+  const warmDuration = (performance.now() - warmStartTimer).toFixed(2);
+  console.log(`   -> Warm Cached Start: ${warmDuration} ms (Cache Hits: ${warmStoreInfo.cacheHits}, Misses: ${warmStoreInfo.cacheMisses})`);
+  console.log(`   -> Aceleración / Speedup: ${(parseFloat(coldDuration) / Math.max(parseFloat(warmDuration), 0.1)).toFixed(1)}x más rápido!\n`);
+
+  // 3. Benchmark de Consultas y Generación de Código Concurrentes
   const iterations = 100;
   const latencies = [];
   let successful = 0;
   let failed = 0;
 
-  console.log(`Ejecutando ${iterations} consultas y generaciones de código concurrentes/secuenciales...`);
+  console.log(`3. Ejecutando ${iterations} consultas y generaciones de código de alto rendimiento...`);
 
   const benchmarkStart = Date.now();
 
@@ -40,18 +51,18 @@ async function runBenchmark() {
 
     try {
       if (mod === 0) {
-        await searchDocsHandler({ query: 'points', limit: 5 });
+        await searchDocsHandler({ query: 'balances', limit: 5 });
       } else if (mod === 1) {
-        await getEndpointDocHandler({ path: '/members/{memberId}', method: 'GET' });
+        await getEndpointDocHandler({ path: '/v1/members/{memberId}/balances', method: 'GET' });
       } else if (mod === 2) {
-        await generateIntegrationCodeHandler({ path: '/flights/search', method: 'GET', language: 'typescript' });
+        await generateIntegrationCodeHandler({ path: '/v1/member-transactions/points/accrual/avasa', method: 'POST', language: 'typescript' });
       } else if (mod === 3) {
         await validatePayloadHandler({
           schemaName: 'AccrualRequest',
           payload: { amountSpent: 1200, partnerId: 'VIVA-MX', referenceNumber: '123' }
         });
       } else {
-        await queryApiKnowledgeHandler({ query: 'tarifas de vuelos' });
+        await queryApiKnowledgeHandler({ query: 'acumulación de puntos en renta de autos' });
       }
       const duration = performance.now() - start;
       latencies.push(duration);
@@ -74,14 +85,14 @@ async function runBenchmark() {
   const p99 = calculatePercentile(latencies, 99).toFixed(2);
   const opsPerSec = ((successful / (totalTimeMs / 1000))).toFixed(2);
 
-  console.log('\n--- RESULTADOS DEL BENCHMARK ---');
-  console.log(`Total Consultas:   ${iterations}`);
-  console.log(`Exitosas:          ${successful}`);
-  console.log(`Fallidas:          ${failed}`);
-  console.log(`Throughput:        ${opsPerSec} ops/seg`);
-  console.log(`Tiempo Total:      ${totalTimeMs} ms\n`);
+  console.log('\n--- RESULTADOS DE RENDIMIENTO Y LATENCIA ---');
+  console.log(`Total Invocaciones: ${iterations}`);
+  console.log(`Exitosas:           ${successful}`);
+  console.log(`Fallidas:           ${failed}`);
+  console.log(`Throughput:         ${opsPerSec} ops/seg`);
+  console.log(`Tiempo Total:       ${totalTimeMs} ms\n`);
 
-  console.log('--- PERCENTILES DE LATENCIA (ms) ---');
+  console.log('--- PERCENTILES DE LATENCIA POR HERRAMIENTA (ms) ---');
   console.table({
     Min: `${min} ms`,
     Avg: `${avg} ms`,
