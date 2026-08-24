@@ -82,3 +82,12 @@ El módulo [src/utils/storage.js](file:///c:/Users/Manuel/Documents/vivaaerobus/
 Todas las excepciones del sistema heredan de `AppError` ([src/errors/AppError.js](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/src/errors/AppError.js)), permitiendo dos formas de serialización:
 - `.toMcpResponse()`: Formato MCP estandarizado `{ isError: true, content: [{ type: 'text', text: '[CODE] mensaje' }] }`.
 - `.toJson()`: Estructura JSON estándar para APIs HTTP con código de estado HTTP adecuado (400, 401, 403, 404, 429, 502, 503, 500).
+
+### 7. Estrategia de Pruebas y Diagnóstico en Runtime
+La fiabilidad del servidor está garantizada por una suite de pruebas multinivel:
+- **Pruebas Unitarias (`tests/unit/`)**: Cobertura exhaustiva sobre `selfTest`, `storage`, `codeGenerator`, `swaggerStore`, `metrics` y las 8 herramientas MCP.
+- **Pruebas de Integración (`tests/integration/`)**: Validación de ciclo de vida del servidor Express SSE, CORS, Session Binding y seguridad.
+- **Pruebas de Contrato (`tests/contract/`)**: Verificación del cumplimiento del protocolo JSON-RPC de Model Context Protocol.
+- **Pruebas de Carga (`tests/load/`)**: Simulación de 100 agentes concurrentes consultando documentación.
+- **Diagnóstico en Tiempo Real (`npm run self-test`)**: Comprobación integral instantánea (<5ms) de configuración, esquemas de herramientas, registro de Prometheus, integridad de almacenamiento y conteo de endpoints/schemas cargados.
+

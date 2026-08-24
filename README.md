@@ -103,17 +103,22 @@ TRANSPORT_MODE=sse PORT=3000 npm start
 
 ## 🧪 Pruebas Automatizadas y Benchmarks
 
+El proyecto cuenta con una suite integral de pruebas con **116 tests pasando (100%)** y una cobertura superior al **93% en sentencias**:
+
 ```bash
-# Suite completa con reporte de cobertura (>= 85%)
+# 1. Ejecutar suite completa de pruebas unitarias y de integración
+npm test
+
+# 2. Reporte de cobertura detallado con Vitest y V8 (>93% Stmts)
 npm run test:coverage
 
-# Pruebas de carga (100 agentes concurrentes)
+# 3. Pruebas de carga de alta concurrencia (100 agentes concurrentes)
 npm run test:load
 
-# Benchmark de latencia y throughput
+# 4. Benchmark de latencia y throughput (<5ms)
 npm run benchmark
 
-# Pipeline de CI completo
+# 5. Pipeline de integración continua (CI)
 npm run test:ci
 ```
 

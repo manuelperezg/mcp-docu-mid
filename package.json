@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "start:prod": "node src/index.js",
     "inspect": "npx @modelcontextprotocol/inspector npm start",
     "self-test": "node src/index.js --self-test",
     "test": "vitest run",
@@ -13,7 +14,11 @@
     "test:coverage": "vitest run --coverage",
     "test:load": "vitest run tests/load",
     "benchmark": "node scripts/benchmark.js",
-    "test:ci": "npm run self-test && vitest run --coverage"
+    "test:ci": "npm run self-test && vitest run --coverage",
+    "docker:build": "docker build -t mcp-doc-mid:latest .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
