@@ -37,14 +37,95 @@ Para guías especializadas y diagramas completos, consulta:
 
 ---
 
-## 📂 Directorio de Swaggers (`swaggers/`)
+## 🛣️ El Flujo de Integración en 3 Pasos (Zero-Code)
 
-Coloca tus archivos OpenAPI en la carpeta `swaggers/`:
+Para que la integración de nuevas APIs sea **100% escalable, sin fricción y sin tocar una sola línea de código**, el servidor implementa **Autodescubrimiento y Carga por Convención**:
+
+```mermaid
+flowchart LR
+    A["1. Copiar Archivo\n(swaggers/mi-api.json o .yml)"] --> B["2. Auto-Discovery & Caching\n(Hash SHA-256 + Dereference)"]
+    B --> C["3. Auto-Diagnóstico\n(npm run self-test)"]
+    C --> D["✅ Disponible en las 8 Tools MCP\n(search_docs, get_endpoint_doc, etc.)"]
+```
+
+### 1️⃣ Paso 1: Colocar el Archivo en `swaggers/`
+Simplemente guarda tu archivo `.json`, `.yml` o `.yaml` en el directorio [`swaggers/`](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/swaggers).
+
+#### 📁 Estructura Escalable Recomendada (Por Dominios o Microservicios):
+El escáner es **recursivo**, por lo que puedes organizar tus archivos en subcarpetas temáticas a medida que crezca el número de APIs:
 
 ```text
 swaggers/
-└── middleware-api.json   # Doters API - Internal (OpenAPI 3.0 JSON con $ref)
+├── middleware-api.json                # API Core Middleware
+├── partners/
+│   ├── avasa-car-rental.json          # Swagger de Avasa
+│   └── iamsa-bus.json                 # Swagger de IAMSA
+├── payments/
+│   └── openpay-gateway.yml            # OpenAPI de Pasarelas de Pago
+└── flights/
+    └── viva-booking.yaml              # OpenAPI de Reservaciones Viva
 ```
+
+> [!TIP]
+> **Identificador Automático (`specId`)**:  
+> El sistema genera el `specId` automáticamente a partir del nombre base del archivo:
+> - `avasa-car-rental.json` $\rightarrow$ `specId: "avasa-car-rental"`
+> - `openpay-gateway.yml` $\rightarrow$ `specId: "openpay-gateway"`
+
+---
+
+### 2️⃣ Paso 2: Verificar la Integridad con `npm run self-test`
+No necesitas levantar clientes MCP ni reiniciar servidores a ciegas. Ejecuta en terminal:
+
+```bash
+npm run self-test
+```
+
+#### ¿Qué hace este comando en < 15 ms?
+1. Detecta el nuevo archivo y calcula su hash SHA-256.
+2. Resuelve y dereferencia automáticamente todos los apuntadores `$ref`.
+3. Sanitiza referencias rotas o ausentes para que el servidor nunca colapse.
+4. Genera el snapshot de alto rendimiento en `.cache/swaggers/`.
+5. Muestra el resumen en tiempo real:
+
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "swaggers": {
+      "status": "pass",
+      "specsCount": 4,
+      "endpointsCount": 285,
+      "schemasCount": 412
+    }
+  }
+}
+```
+
+---
+
+### 3️⃣ Paso 3: Listo para Consultar por los Agentes y LLMs
+De forma inmediata, las 8 herramientas MCP aprenden los nuevos endpoints y esquemas sin configuración adicional:
+
+* **Búsqueda global**: `search_docs({ query: "renta autos" })` buscará en todos los swaggers a la vez.
+* **Búsqueda filtrada**: `search_docs({ query: "renta", specId: "avasa-car-rental" })` consulta exclusivamente esa API.
+* **Generación de código**: `generate_integration_code({ path: "/v1/cars/book", language: "typescript" })` generará el cliente tipado.
+* **Validación de payloads**: `validate_payload({ schemaName: "CarBookingDto", payload: { ... } })` validará contra el nuevo modelo.
+
+---
+
+### 🏆 Buenas Prácticas para Garantizar Máxima Calidad en el LLM
+Para que los modelos de lenguaje generen el mejor código y respuestas precisas al leer tus nuevos swaggers:
+
+1. **Declarar la URL Base (`servers`)**:
+   ```yaml
+   servers:
+     - url: https://api.vivaaerobus.com/v1
+       description: Ambiente de Producción
+   ```
+2. **Incluir Ejemplos en los Schemas (`example` / `examples`)**: Los ejemplos permiten a la herramienta `generate_integration_code` y al LLM crear payloads de prueba realistas automáticamente.
+3. **Usar Etiquetas Claras (`tags`)**: Agrupar por tags (ej. `[ "CarRental", "Payments", "Security" ]`) permite a los agentes filtrar colecciones de endpoints rápidamente con `search_docs({ tag: "Payments" })`.
+4. **Declarar la Seguridad (`components.securitySchemes`)**: Especificar si usa `bearerFormat: JWT`, `ApiKey` o `OAuth2` para que la herramienta `get_security_schemes` exponga las cabeceras requeridas.
 
 ---
 
