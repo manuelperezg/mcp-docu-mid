@@ -21,6 +21,12 @@ describe('Code Generator Utility', () => {
         required: false,
         description: 'Notificar por email',
         schema: { type: 'boolean' }
+      },
+      {
+        name: 'count',
+        in: 'query',
+        required: true,
+        schema: { type: 'integer' }
       }
     ],
     requestBody: {
@@ -31,7 +37,18 @@ describe('Code Generator Utility', () => {
             required: ['amountSpent', 'partnerId'],
             properties: {
               amountSpent: { type: 'number', example: 1500.00 },
-              partnerId: { type: 'string', example: 'VIVA-MX' }
+              partnerId: { type: 'string', example: 'VIVA-MX' },
+              contactEmail: { type: 'string', format: 'email' },
+              transactionDate: { type: 'string', format: 'date-time' },
+              bookingDate: { type: 'string', format: 'date' },
+              statusEnum: { type: 'string', enum: ['ACTIVE', 'PENDING'] },
+              tags: { type: 'array', items: { type: 'string' } },
+              metadata: {
+                type: 'object',
+                properties: {
+                  clientVer: { type: 'string' }
+                }
+              }
             }
           }
         }
@@ -103,6 +120,7 @@ describe('Code Generator Utility', () => {
     expect(code).toContain('https://api.doters.com/members/DOT-123/points/accrue');
     expect(code).toContain('-H "Content-Type: application/json"');
     expect(code).toContain('amountSpent');
+    expect(code).toContain('user@example.com');
   });
 
   it('generates C# HttpClient snippet', () => {
@@ -115,5 +133,36 @@ describe('Code Generator Utility', () => {
     expect(code).toContain('public class AccruePointsClient');
     expect(code).toContain('public async Task<string> ExecuteAsync(');
     expect(code).toContain('JsonSerializer.Serialize(payload)');
+  });
+
+  it('handles endpoints without operationId, summary, parameters or requestBody gracefully', () => {
+    const minimalEndpoint = {
+      method: 'GET',
+      path: '/health'
+    };
+
+    const tsCode = generateIntegrationSnippet({
+      endpoint: minimalEndpoint,
+      language: 'ts'
+    });
+    expect(tsCode).toContain('export async function get_api_call(');
+
+    const pyCode = generateIntegrationSnippet({
+      endpoint: minimalEndpoint,
+      language: 'python'
+    });
+    expect(pyCode).toContain('async def get_api_call(');
+
+    const curlCode = generateIntegrationSnippet({
+      endpoint: minimalEndpoint,
+      language: 'curl'
+    });
+    expect(curlCode).toContain('curl -X GET');
+
+    const unknownLangCode = generateIntegrationSnippet({
+      endpoint: minimalEndpoint,
+      language: 'unsupported-lang'
+    });
+    expect(unknownLangCode).toContain('export async function get_api_call(');
   });
 });

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
-import { createExpressApp } from '../../src/server/sseServer.js';
+import { createExpressApp, startSseServer } from '../../src/server/sseServer.js';
 import { createMcpServer } from '../../src/index.js';
 import { config } from '../../src/utils/config.js';
 
@@ -46,5 +46,24 @@ describe('SSE Server & HTTP Integration', () => {
     
     expect(authRes.status).toBe(200);
     expect(authRes.text).toContain('MCP-DOC-MID');
+  });
+
+  it('OPTIONS request returns 204 with CORS headers', async () => {
+    const res = await request(app)
+      .options('/health')
+      .set('Origin', 'http://localhost:3000');
+
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-methods']).toBe('GET, POST, OPTIONS');
+  });
+
+  it('starts SSE server instance and listens on ephemeral port', async () => {
+    const testPort = 0;
+    const server = startSseServer(createMcpServer, testPort);
+
+    expect(server).toBeDefined();
+    expect(server.listening).toBe(true);
+
+    await new Promise((resolve) => server.close(resolve));
   });
 });
