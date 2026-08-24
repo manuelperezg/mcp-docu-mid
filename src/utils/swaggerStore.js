@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { NotFoundError, ValidationError } from '../errors/index.js';
 
-const CACHE_DIR = path.resolve(process.cwd(), '.cache/swaggers');
+const CACHE_DIR = path.resolve(config.projectRoot, '.cache/swaggers');
 
 const specsMap = new Map();
 let endpointsIndex = [];
@@ -99,7 +99,10 @@ export function getCacheStats() {
 }
 
 function findSwaggerFiles(dirPath) {
-  const resolved = path.resolve(process.cwd(), dirPath);
+  let resolved = path.isAbsolute(dirPath) ? dirPath : path.resolve(process.cwd(), dirPath);
+  if (!fs.existsSync(resolved)) {
+    resolved = path.resolve(config.projectRoot, dirPath);
+  }
   if (!fs.existsSync(resolved)) {
     return [];
   }

@@ -21,18 +21,18 @@ describe('Concurrency & Load Test Suite (Swagger Knowledge & Code Gen)', () => {
     const tasks = Array.from({ length: concurrentAgents }, (_, i) => {
       const mod = i % 5;
       if (mod === 0) {
-        return searchDocsHandler({ query: 'points', limit: 2 });
+        return searchDocsHandler({ query: 'balances', limit: 2 });
       } else if (mod === 1) {
-        return getEndpointDocHandler({ path: '/members/{memberId}', method: 'GET' });
+        return getEndpointDocHandler({ path: '/v1/members/{memberId}/balances', method: 'GET' });
       } else if (mod === 2) {
-        return generateIntegrationCodeHandler({ path: '/flights/search', method: 'GET', language: 'python' });
+        return generateIntegrationCodeHandler({ path: '/v1/security/login', method: 'POST', language: 'python' });
       } else if (mod === 3) {
         return validatePayloadHandler({
-          schemaName: 'AccrualRequest',
-          payload: { amountSpent: 1000, partnerId: 'VIVA', referenceNumber: '123' }
+          schemaName: 'LoginRequestDto',
+          payload: { email: 'test@example.com', password: 'securePassword123' }
         });
       } else {
-        return queryApiKnowledgeHandler({ query: 'cómo buscar vuelos' });
+        return queryApiKnowledgeHandler({ query: 'cómo consultar balances de socios' });
       }
     });
 

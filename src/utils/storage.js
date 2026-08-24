@@ -14,11 +14,19 @@ function ensureDirSync(filePath) {
   }
 }
 
+function resolveStatsPath() {
+  const target = config.statsStoragePath;
+  if (path.isAbsolute(target)) return target;
+  const cwdPath = path.resolve(process.cwd(), target);
+  if (fs.existsSync(cwdPath)) return cwdPath;
+  return path.resolve(config.projectRoot, target);
+}
+
 export function loadStatsFromDisk() {
   if (!config.statsStorageEnabled) return;
 
   try {
-    const fullPath = path.resolve(process.cwd(), config.statsStoragePath);
+    const fullPath = resolveStatsPath();
     if (fs.existsSync(fullPath)) {
       const data = fs.readFileSync(fullPath, 'utf8');
       const parsed = JSON.parse(data);
@@ -34,7 +42,7 @@ export function saveStatsSync() {
   if (!config.statsStorageEnabled) return;
 
   try {
-    const fullPath = path.resolve(process.cwd(), config.statsStoragePath);
+    const fullPath = resolveStatsPath();
     ensureDirSync(fullPath);
 
     const tempPath = `${fullPath}.${Date.now()}.tmp`;

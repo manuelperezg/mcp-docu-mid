@@ -60,7 +60,7 @@ describe('MCP Protocol Contract & Schema Validation', () => {
       params: {
         name: 'generate_integration_code',
         arguments: {
-          path: '/members/{memberId}',
+          path: '/v1/members/{memberId}/balances',
           method: 'GET',
           language: 'typescript'
         }
@@ -70,7 +70,7 @@ describe('MCP Protocol Contract & Schema Validation', () => {
     expect(result).toHaveProperty('content');
     expect(Array.isArray(result.content)).toBe(true);
     expect(result.content[0].type).toBe('text');
-    expect(result.content[0].text).toContain('export async function getMemberProfile(');
+    expect(result.content[0].text).toContain('export async function GetBalancesController_getBalances_v1(');
   });
 
   it('MCP server throws when calling an unknown tool', async () => {

@@ -61,7 +61,7 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
       expect(response.content[0].type).toBe('text');
 
       const parsed = JSON.parse(response.content[0].text);
-      expect(parsed.totalSpecs).toBeGreaterThanOrEqual(2);
+      expect(parsed.totalSpecs).toBeGreaterThanOrEqual(1);
       expect(parsed.specs[0]).toHaveProperty('title');
       expect(parsed.specs[0]).toHaveProperty('pathsCount');
     });
@@ -69,11 +69,11 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
 
   describe('searchDocsHandler', () => {
     it('searches across endpoints and schemas', async () => {
-      const response = await searchDocsHandler({ query: 'points' });
+      const response = await searchDocsHandler({ query: 'balances' });
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
-      expect(parsed.query).toBe('points');
+      expect(parsed.query).toBe('balances');
       expect(parsed.totalEndpointsFound).toBeGreaterThan(0);
     });
 
@@ -86,12 +86,12 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
 
   describe('getEndpointDocHandler', () => {
     it('retrieves detailed dereferenced endpoint specification', async () => {
-      const response = await getEndpointDocHandler({ path: '/members/{memberId}', method: 'GET' });
+      const response = await getEndpointDocHandler({ path: '/v1/members/{memberId}/balances', method: 'GET' });
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
       expect(parsed.endpoint.method).toBe('GET');
-      expect(parsed.endpoint.path).toBe('/members/{memberId}');
+      expect(parsed.endpoint.path).toBe('/v1/members/{memberId}/balances');
       expect(parsed.endpoint.parameters[0].name).toBe('memberId');
     });
 
@@ -104,12 +104,12 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
 
   describe('getSchemaDocHandler', () => {
     it('retrieves detailed dereferenced schema model', async () => {
-      const response = await getSchemaDocHandler({ schemaName: 'MemberProfile' });
+      const response = await getSchemaDocHandler({ schemaName: 'LoginRequestDto' });
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
-      expect(parsed.schema.schemaName).toBe('MemberProfile');
-      expect(parsed.schema.properties).toHaveProperty('memberId');
+      expect(parsed.schema.schemaName).toBe('LoginRequestDto');
+      expect(parsed.schema.properties).toHaveProperty('email');
     });
 
     it('returns error when schemaName is missing', async () => {
@@ -122,21 +122,21 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
   describe('generateIntegrationCodeHandler', () => {
     it('generates TypeScript integration snippet', async () => {
       const response = await generateIntegrationCodeHandler({
-        path: '/members/{memberId}/points/accrue',
-        method: 'POST',
+        path: '/v1/members/{memberId}/balances',
+        method: 'GET',
         language: 'typescript'
       });
 
       expect(response.isError).toBeUndefined();
       const parsed = JSON.parse(response.content[0].text);
       expect(parsed.language).toBe('typescript');
-      expect(parsed.generatedCode).toContain('export async function accruePoints(');
+      expect(parsed.generatedCode).toContain('export async function GetBalancesController_getBalances_v1(');
     });
 
     it('generates Python integration snippet', async () => {
       const response = await generateIntegrationCodeHandler({
-        path: '/flights/search',
-        method: 'GET',
+        path: '/v1/security/login',
+        method: 'POST',
         language: 'python'
       });
 
@@ -144,7 +144,7 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
       const parsed = JSON.parse(response.content[0].text);
       expect(parsed.language).toBe('python');
       expect(parsed.generatedCode).toContain('import httpx');
-      expect(parsed.generatedCode).toContain('async def search_flights(');
+      expect(parsed.generatedCode).toContain('async def login_controller_do_login_v1(');
     });
 
     it('returns error when endpoint does not exist', async () => {
@@ -176,11 +176,10 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
   describe('validatePayloadHandler', () => {
     it('validates correct payload successfully', async () => {
       const response = await validatePayloadHandler({
-        schemaName: 'AccrualRequest',
+        schemaName: 'LoginRequestDto',
         payload: {
-          amountSpent: 2500,
-          partnerId: 'VIVA-MX',
-          referenceNumber: 'PNR-999'
+          email: 'user@example.com',
+          password: 'securePassword123'
         }
       });
 
@@ -191,9 +190,9 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
 
     it('returns validation errors for missing required fields', async () => {
       const response = await validatePayloadHandler({
-        schemaName: 'AccrualRequest',
+        schemaName: 'LoginRequestDto',
         payload: {
-          partnerId: 'VIVA-MX'
+          email: 'user@example.com'
         }
       });
 
@@ -212,11 +211,11 @@ describe('Swagger Documentation & Code Generation MCP Tools', () => {
 
   describe('queryApiKnowledgeHandler', () => {
     it('synthesizes API knowledge to answer technical/business questions', async () => {
-      const response = await queryApiKnowledgeHandler({ query: 'vuelos' });
+      const response = await queryApiKnowledgeHandler({ query: 'balances' });
       expect(response.isError).toBeUndefined();
 
       const parsed = JSON.parse(response.content[0].text);
-      expect(parsed.query).toBe('vuelos');
+      expect(parsed.query).toBe('balances');
       expect(parsed).toHaveProperty('contextSummary');
       expect(parsed).toHaveProperty('relevantEndpoints');
     });

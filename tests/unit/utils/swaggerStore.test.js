@@ -23,20 +23,18 @@ describe('Swagger Knowledge Store, Cache & O(1) Lookups', () => {
 
   it('loads and dereferences OpenAPI files into memory using parallel cache snapshots', async () => {
     const stats = getStoreStats();
-    expect(stats.specsCount).toBeGreaterThanOrEqual(3);
-    expect(stats.endpointsCount).toBeGreaterThanOrEqual(140);
-    expect(stats.schemasCount).toBeGreaterThanOrEqual(220);
+    expect(stats.specsCount).toBeGreaterThanOrEqual(1);
+    expect(stats.endpointsCount).toBeGreaterThanOrEqual(110);
+    expect(stats.schemasCount).toBeGreaterThanOrEqual(200);
 
     const specs = getLoadedSpecs();
-    expect(specs.map(s => s.id)).toContain('loyalty-api');
-    expect(specs.map(s => s.id)).toContain('flights-api');
-    expect(specs.map(s => s.id)).toContain('middleware-internal');
+    expect(specs.map(s => s.id)).toContain('middleware-api');
   });
 
   it('subsequent loadAllSwaggers uses snapshot cache (cache hit)', async () => {
     const reloadResult = await loadAllSwaggers('swaggers');
     expect(reloadResult.cacheHits).toBeGreaterThan(0);
-    expect(reloadResult.specsCount).toBeGreaterThanOrEqual(3);
+    expect(reloadResult.specsCount).toBeGreaterThanOrEqual(1);
 
     const cacheStats = getCacheStats();
     expect(cacheStats.hits).toBeGreaterThan(0);
@@ -50,10 +48,10 @@ describe('Swagger Knowledge Store, Cache & O(1) Lookups', () => {
   });
 
   it('dereferences internal $ref pointers inside endpoints', () => {
-    const endpoint = getEndpointDoc({ path: '/members/{memberId}', method: 'GET' });
+    const endpoint = getEndpointDoc({ path: '/v1/members/{memberId}/balances', method: 'GET' });
     expect(endpoint).toBeDefined();
     expect(endpoint.method).toBe('GET');
-    expect(endpoint.path).toBe('/members/{memberId}');
+    expect(endpoint.path).toBe('/v1/members/{memberId}/balances');
 
     // El parámetro debe estar dereferenciado (sin $ref)
     expect(endpoint.parameters[0].name).toBe('memberId');
@@ -76,10 +74,10 @@ describe('Swagger Knowledge Store, Cache & O(1) Lookups', () => {
   });
 
   it('getSpec returns raw spec by specId', () => {
-    const spec = getSpec('loyalty-api');
+    const spec = getSpec('middleware-api');
     expect(spec).toBeDefined();
-    expect(spec.title).toBe('Doters Loyalty API');
-    expect(spec.version).toBe('2.4.0');
+    expect(spec.title).toBe('Doters API - Internal');
+    expect(spec.version).toBe('2.0');
 
     expect(getSpec('non-existent')).toBeNull();
     expect(getSpec(null)).toBeNull();
@@ -88,10 +86,10 @@ describe('Swagger Knowledge Store, Cache & O(1) Lookups', () => {
   it('getSecuritySchemes returns security definitions for all specs or a target spec', () => {
     const allSec = getSecuritySchemes();
     expect(allSec).toHaveProperty('schemesBySpec');
-    expect(allSec.schemesBySpec.length).toBeGreaterThanOrEqual(3);
+    expect(allSec.schemesBySpec.length).toBeGreaterThanOrEqual(1);
 
-    const singleSec = getSecuritySchemes('middleware-internal');
-    expect(singleSec.specId).toBe('middleware-internal');
+    const singleSec = getSecuritySchemes('middleware-api');
+    expect(singleSec.specId).toBe('middleware-api');
     expect(singleSec).toHaveProperty('securitySchemes');
     expect(singleSec.securitySchemes).toHaveProperty('bearer');
 
@@ -100,23 +98,21 @@ describe('Swagger Knowledge Store, Cache & O(1) Lookups', () => {
 
   it('validatePayloadAgainstSchema validates valid payload correctly', () => {
     const validPayload = {
-      amountSpent: 1200.50,
-      partnerId: 'VIVA-MX',
-      referenceNumber: 'PNR-1234'
+      email: 'user@example.com',
+      password: 'mypassword123'
     };
 
-    const result = validatePayloadAgainstSchema({ schemaName: 'AccrualRequest', payload: validPayload });
+    const result = validatePayloadAgainstSchema({ schemaName: 'LoginRequestDto', payload: validPayload });
     expect(result.isValid).toBe(true);
     expect(result.errorsCount).toBe(0);
   });
 
   it('validatePayloadAgainstSchema catches missing fields and invalid types', () => {
     const invalidPayload = {
-      amountSpent: 'invalid-string',
-      partnerId: 'VIVA-MX'
+      email: 12345
     };
 
-    const result = validatePayloadAgainstSchema({ schemaName: 'AccrualRequest', payload: invalidPayload });
+    const result = validatePayloadAgainstSchema({ schemaName: 'LoginRequestDto', payload: invalidPayload });
     expect(result.isValid).toBe(false);
     expect(result.errorsCount).toBe(2);
   });
