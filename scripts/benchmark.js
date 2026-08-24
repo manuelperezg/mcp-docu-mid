@@ -1,4 +1,12 @@
-import { docSearchHandler, docFetchHandler } from '../src/tools/documentation/handler.js';
+import {
+  searchDocsHandler,
+  getEndpointDocHandler,
+  getSchemaDocHandler,
+  generateIntegrationCodeHandler,
+  validatePayloadHandler,
+  queryApiKnowledgeHandler
+} from '../src/tools/documentation/handler.js';
+import { loadAllSwaggers } from '../src/utils/swaggerStore.js';
 
 function calculatePercentile(sortedArray, percentile) {
   if (sortedArray.length === 0) return 0;
@@ -7,28 +15,43 @@ function calculatePercentile(sortedArray, percentile) {
 }
 
 async function runBenchmark() {
-  console.log('====================================================');
-  console.log('  MCP-DOC-MID: BENCHMARK & LATENCY PERFORMANCE TEST');
-  console.log('====================================================\n');
+  console.log('================================================================');
+  console.log('  MCP-DOC-MID: SWAGGER & CODE GEN BENCHMARK PERFORMANCE');
+  console.log('================================================================\n');
+
+  console.log('Cargando y dereferenciando archivos Swagger en memoria...');
+  const initStart = performance.now();
+  const storeInfo = await loadAllSwaggers('swaggers');
+  const initDuration = (performance.now() - initStart).toFixed(2);
+  console.log(`Specs cargados: ${storeInfo.specsCount} | Endpoints: ${storeInfo.endpointsCount} | Schemas: ${storeInfo.schemasCount} (en ${initDuration}ms)\n`);
 
   const iterations = 100;
   const latencies = [];
   let successful = 0;
   let failed = 0;
 
-  console.log(`Ejecutando ${iterations} iteraciones de doc_search y doc_fetch...`);
+  console.log(`Ejecutando ${iterations} consultas y generaciones de código concurrentes/secuenciales...`);
 
   const benchmarkStart = Date.now();
 
   for (let i = 0; i < iterations; i++) {
-    const isSearch = i % 2 === 0;
+    const mod = i % 5;
     const start = performance.now();
 
     try {
-      if (isSearch) {
-        await docSearchHandler({ query: 'arquitectura', limit: 3 });
+      if (mod === 0) {
+        await searchDocsHandler({ query: 'points', limit: 5 });
+      } else if (mod === 1) {
+        await getEndpointDocHandler({ path: '/members/{memberId}', method: 'GET' });
+      } else if (mod === 2) {
+        await generateIntegrationCodeHandler({ path: '/flights/search', method: 'GET', language: 'typescript' });
+      } else if (mod === 3) {
+        await validatePayloadHandler({
+          schemaName: 'AccrualRequest',
+          payload: { amountSpent: 1200, partnerId: 'VIVA-MX', referenceNumber: '123' }
+        });
       } else {
-        await docFetchHandler({ documentId: 'arch-mcp-overview' });
+        await queryApiKnowledgeHandler({ query: 'tarifas de vuelos' });
       }
       const duration = performance.now() - start;
       latencies.push(duration);
@@ -52,7 +75,7 @@ async function runBenchmark() {
   const opsPerSec = ((successful / (totalTimeMs / 1000))).toFixed(2);
 
   console.log('\n--- RESULTADOS DEL BENCHMARK ---');
-  console.log(`Total Ejecuciones: ${iterations}`);
+  console.log(`Total Consultas:   ${iterations}`);
   console.log(`Exitosas:          ${successful}`);
   console.log(`Fallidas:          ${failed}`);
   console.log(`Throughput:        ${opsPerSec} ops/seg`);
@@ -68,7 +91,7 @@ async function runBenchmark() {
     p99: `${p99} ms`,
     Max: `${max} ms`
   });
-  console.log('====================================================\n');
+  console.log('================================================================\n');
 }
 
 runBenchmark().catch((err) => {

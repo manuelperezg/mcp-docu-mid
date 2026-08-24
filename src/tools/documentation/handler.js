@@ -1,181 +1,419 @@
 import { toolExecutionDuration, toolRequestsTotal, recordActivity, estimateTokens } from '../../utils/metrics.js';
-import { handleToolError, ValidationError, NotFoundError } from '../../errors/index.js';
+import { handleToolError } from '../../errors/index.js';
 import { logger } from '../../utils/logger.js';
-import { CircuitBreaker, executeWithRetry } from '../../utils/resilience.js';
+import { CircuitBreaker } from '../../utils/resilience.js';
+import {
+  getLoadedSpecs,
+  searchDocs,
+  getEndpointDoc,
+  getSchemaDoc,
+  getSecuritySchemes,
+  validatePayloadAgainstSchema,
+  queryApiKnowledge
+} from '../../utils/swaggerStore.js';
+import { generateIntegrationSnippet } from '../../utils/codeGenerator.js';
 
-const docServiceBreaker = new CircuitBreaker({
-  name: 'doc_service',
-  failureThreshold: 4,
+const swaggerBreaker = new CircuitBreaker({
+  name: 'swagger_knowledge_store',
+  failureThreshold: 5,
   cooldownMs: 15000
 });
 
-// Catálogo base de documentación para MCP-DOC-MID
-const SAMPLE_DOCS = [
-  {
-    id: 'arch-mcp-overview',
-    title: 'Arquitectura Enterprise de Servidores MCP',
-    category: 'architecture',
-    tags: ['mcp', 'node', 'sse', 'stdio', 'security'],
-    summary: 'Guía sobre la arquitectura dual (STDIO/SSE), Session Binding y observabilidad.',
-    content: `# Arquitectura Enterprise de Servidores MCP\n\nEste documento describe los estándares de resiliencia, métricas y transporte dual (STDIO/SSE) para servidores MCP corporativos.\n\n- Transporte STDIO para CLI local\n- Transporte SSE/Express para despliegue distribuido\n- Session Binding para seguridad contra Session Hijacking\n- Cobertura de pruebas >=85%`
-  },
-  {
-    id: 'api-error-hierarchy',
-    title: 'Jerarquía de Errores y Manejo Resiliente',
-    category: 'api',
-    tags: ['errors', 'apperror', 'resilience'],
-    summary: 'Especificación de clases AppError y serialización dual JSON-RPC / HTTP.',
-    content: `# Jerarquía de Errores\n\nTodos los errores derivan de AppError implementando .toMcpResponse() y .toJson().\n\n- ValidationError (400)\n- AuthenticationError (401)\n- ForbiddenError (403)\n- NotFoundError (404)\n- RateLimitError (429)\n- ExternalServiceError (502)\n- CircuitBreakerOpenError (503)`
-  },
-  {
-    id: 'deployment-docker-guide',
-    title: 'Guía de Despliegue con Docker y Kubernetes',
-    category: 'deployment',
-    tags: ['docker', 'deployment', 'kubernetes'],
-    summary: 'Instrucciones para empaquetar el servidor MCP con Docker multi-stage.',
-    content: `# Guía de Despliegue Docker\n\nUtiliza imagen Node.js Alpine en multi-stage.\n\n\`\`\`bash\ndocker build -t mcp-doc-mid:latest .\ndocker run -p 3000:3000 -e TRANSPORT_MODE=sse mcp-doc-mid:latest\n\`\`\``
-  }
-];
-
-export async function docSearchHandler(args) {
+export async function listSpecsHandler(args = {}) {
   const startTime = Date.now();
-  const timer = toolExecutionDuration.startTimer({ tool_name: 'doc_search' });
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'list_specs' });
 
   try {
-    if (!args || typeof args.query !== 'string' || !args.query.trim()) {
-      throw new ValidationError('El parámetro "query" es requerido y debe ser una cadena de texto no vacía.', { field: 'query' });
-    }
+    logger.info('Listando especificaciones Swagger/OpenAPI aprendidas');
 
-    const query = args.query.toLowerCase().trim();
-    const category = args.category ? String(args.category).toLowerCase().trim() : null;
-    const limit = Math.min(Math.max(parseInt(args.limit || '5', 10), 1), 20);
-
-    logger.info({ query, category, limit }, 'Ejecutando búsqueda documental en doc_search');
-
-    const results = await docServiceBreaker.execute(async () => {
-      return executeWithRetry(async () => {
-        let filtered = SAMPLE_DOCS;
-        if (category) {
-          filtered = filtered.filter(d => d.category.toLowerCase() === category);
-        }
-
-        const matched = filtered.filter(doc => {
-          const matchTitle = doc.title.toLowerCase().includes(query);
-          const matchSummary = doc.summary.toLowerCase().includes(query);
-          const matchTags = doc.tags.some(t => t.toLowerCase().includes(query));
-          const matchContent = doc.content.toLowerCase().includes(query);
-          return matchTitle || matchSummary || matchTags || matchContent;
-        });
-
-        return matched.slice(0, limit).map(doc => ({
-          id: doc.id,
-          title: doc.title,
-          category: doc.category,
-          tags: doc.tags,
-          summary: doc.summary
-        }));
-      });
+    const specs = await swaggerBreaker.execute(async () => {
+      return getLoadedSpecs();
     });
 
     const responsePayload = {
-      query: args.query,
-      category: category || 'all',
-      totalFound: results.length,
-      results,
+      totalSpecs: specs.length,
+      specs,
       timestamp: new Date().toISOString()
     };
 
     const responseText = JSON.stringify(responsePayload, null, 2);
     const duration_ms = Date.now() - startTime;
 
-    toolRequestsTotal.inc({ tool_name: 'doc_search', status: 'success' });
+    toolRequestsTotal.inc({ tool_name: 'list_specs', status: 'success' });
     timer({ status: 'success' });
 
     recordActivity({
-      tool_name: 'doc_search',
+      tool_name: 'list_specs',
       status: 'SUCCESS',
       duration_ms,
       tokens: estimateTokens(responseText),
-      details: `Query: ${query} (encontrados: ${results.length})`
+      details: `Specs cargados: ${specs.length}`
     });
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: responseText
-        }
-      ]
+      content: [{ type: 'text', text: responseText }]
     };
   } catch (error) {
     return handleToolError({
-      toolName: 'doc_search',
+      toolName: 'list_specs',
       error,
       startTime,
       timer,
-      logMessage: 'Fallo al ejecutar búsqueda en doc_search',
-      prefix: 'Error en servicio de documentación'
+      logMessage: 'Fallo al listar especificaciones OpenAPI',
+      prefix: 'Error en catálogo de Swagger'
     });
   }
 }
 
-export async function docFetchHandler(args) {
+export async function searchDocsHandler(args = {}) {
   const startTime = Date.now();
-  const timer = toolExecutionDuration.startTimer({ tool_name: 'doc_fetch' });
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'search_docs' });
 
   try {
-    if (!args || typeof args.documentId !== 'string' || !args.documentId.trim()) {
-      throw new ValidationError('El parámetro "documentId" es requerido.', { field: 'documentId' });
-    }
+    logger.info({ query: args?.query, specId: args?.specId, tag: args?.tag }, 'Ejecutando búsqueda documental en Swagger');
 
-    const documentId = args.documentId.trim();
-    logger.info({ documentId }, 'Obteniendo contenido de documento en doc_fetch');
-
-    const document = await docServiceBreaker.execute(async () => {
-      return executeWithRetry(async () => {
-        const found = SAMPLE_DOCS.find(d => d.id === documentId || d.title.toLowerCase() === documentId.toLowerCase());
-        if (!found) {
-          throw new NotFoundError(`Documento con ID '${documentId}' no encontrado.`, { documentId });
-        }
-        return found;
+    const results = await swaggerBreaker.execute(async () => {
+      return searchDocs({
+        query: args?.query,
+        specId: args?.specId,
+        tag: args?.tag,
+        limit: args?.limit
       });
     });
 
     const responsePayload = {
-      document,
+      ...results,
       retrievedAt: new Date().toISOString()
     };
 
     const responseText = JSON.stringify(responsePayload, null, 2);
     const duration_ms = Date.now() - startTime;
 
-    toolRequestsTotal.inc({ tool_name: 'doc_fetch', status: 'success' });
+    toolRequestsTotal.inc({ tool_name: 'search_docs', status: 'success' });
     timer({ status: 'success' });
 
     recordActivity({
-      tool_name: 'doc_fetch',
+      tool_name: 'search_docs',
       status: 'SUCCESS',
       duration_ms,
       tokens: estimateTokens(responseText),
-      details: `Doc ID: ${documentId}`
+      details: `Query: ${args?.query} (endpoints: ${results.totalEndpointsFound}, schemas: ${results.totalSchemasFound})`
     });
 
     return {
-      content: [
-        {
-          type: 'text',
-          text: responseText
-        }
-      ]
+      content: [{ type: 'text', text: responseText }]
     };
   } catch (error) {
     return handleToolError({
-      toolName: 'doc_fetch',
+      toolName: 'search_docs',
       error,
       startTime,
       timer,
-      logMessage: 'Fallo al obtener documento en doc_fetch',
-      prefix: 'Error en servicio de documentación'
+      logMessage: 'Fallo al buscar en documentación OpenAPI',
+      prefix: 'Error en búsqueda documental'
+    });
+  }
+}
+
+export async function getEndpointDocHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'get_endpoint_doc' });
+
+  try {
+    logger.info({ path: args?.path, method: args?.method, specId: args?.specId }, 'Obteniendo endpoint dereferenciado');
+
+    const endpointDoc = await swaggerBreaker.execute(async () => {
+      return getEndpointDoc({
+        path: args?.path,
+        method: args?.method,
+        specId: args?.specId
+      });
+    });
+
+    const responsePayload = {
+      endpoint: endpointDoc,
+      retrievedAt: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'get_endpoint_doc', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'get_endpoint_doc',
+      status: 'SUCCESS',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `${endpointDoc.method} ${endpointDoc.path}`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'get_endpoint_doc',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al obtener documentación de endpoint',
+      prefix: 'Error al consultar endpoint'
+    });
+  }
+}
+
+export async function getSchemaDocHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'get_schema_doc' });
+
+  try {
+    logger.info({ schemaName: args?.schemaName, specId: args?.specId }, 'Obteniendo schema dereferenciado');
+
+    const schemaDoc = await swaggerBreaker.execute(async () => {
+      return getSchemaDoc({
+        schemaName: args?.schemaName,
+        specId: args?.specId
+      });
+    });
+
+    const responsePayload = {
+      schema: schemaDoc,
+      retrievedAt: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'get_schema_doc', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'get_schema_doc',
+      status: 'SUCCESS',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `Schema: ${schemaDoc.schemaName}`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'get_schema_doc',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al obtener schema OpenAPI',
+      prefix: 'Error al consultar schema'
+    });
+  }
+}
+
+export async function generateIntegrationCodeHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'generate_integration_code' });
+
+  try {
+    logger.info({ path: args?.path, method: args?.method, language: args?.language }, 'Generando snippet de integración de código');
+
+    const endpointDoc = await swaggerBreaker.execute(async () => {
+      return getEndpointDoc({
+        path: args?.path,
+        method: args?.method,
+        specId: args?.specId
+      });
+    });
+
+    const primaryServerUrl = endpointDoc.servers && endpointDoc.servers.length > 0
+      ? endpointDoc.servers[0].url
+      : 'https://api.vivaaerobus.com';
+
+    const codeSnippet = generateIntegrationSnippet({
+      endpoint: endpointDoc,
+      baseUrl: primaryServerUrl,
+      language: args?.language || 'typescript',
+      clientType: args?.clientType || 'fetch'
+    });
+
+    const responsePayload = {
+      endpoint: `${endpointDoc.method} ${endpointDoc.path}`,
+      language: args?.language || 'typescript',
+      clientType: args?.clientType || 'fetch',
+      baseUrl: primaryServerUrl,
+      generatedCode: codeSnippet,
+      timestamp: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'generate_integration_code', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'generate_integration_code',
+      status: 'SUCCESS',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `CodeGen: ${endpointDoc.method} ${endpointDoc.path} (${args?.language || 'typescript'})`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'generate_integration_code',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al generar código de integración',
+      prefix: 'Error en generador de código'
+    });
+  }
+}
+
+export async function getSecuritySchemesHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'get_security_schemes' });
+
+  try {
+    logger.info({ specId: args?.specId }, 'Obteniendo esquemas de seguridad OpenAPI');
+
+    const securityInfo = await swaggerBreaker.execute(async () => {
+      return getSecuritySchemes(args?.specId);
+    });
+
+    const responsePayload = {
+      ...securityInfo,
+      retrievedAt: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'get_security_schemes', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'get_security_schemes',
+      status: 'SUCCESS',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `Security Schemes query`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'get_security_schemes',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al obtener esquemas de seguridad',
+      prefix: 'Error al consultar esquemas de seguridad'
+    });
+  }
+}
+
+export async function validatePayloadHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'validate_payload' });
+
+  try {
+    logger.info({ schemaName: args?.schemaName, specId: args?.specId }, 'Validando payload contra schema OpenAPI');
+
+    const validationResult = await swaggerBreaker.execute(async () => {
+      return validatePayloadAgainstSchema({
+        schemaName: args?.schemaName,
+        payload: args?.payload,
+        specId: args?.specId
+      });
+    });
+
+    const responsePayload = {
+      ...validationResult,
+      timestamp: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'validate_payload', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'validate_payload',
+      status: validationResult.isValid ? 'SUCCESS' : 'FAILED',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `Payload validation for ${args?.schemaName}: ${validationResult.isValid ? 'VALID' : 'INVALID'}`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'validate_payload',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al validar payload contra schema',
+      prefix: 'Error en validación de payload'
+    });
+  }
+}
+
+export async function queryApiKnowledgeHandler(args = {}) {
+  const startTime = Date.now();
+  const timer = toolExecutionDuration.startTimer({ tool_name: 'query_api_knowledge' });
+
+  try {
+    logger.info({ query: args?.query, specId: args?.specId }, 'Consultando conocimiento global de APIs');
+
+    const knowledge = await swaggerBreaker.execute(async () => {
+      return queryApiKnowledge({
+        query: args?.query,
+        specId: args?.specId
+      });
+    });
+
+    const responsePayload = {
+      ...knowledge,
+      timestamp: new Date().toISOString()
+    };
+
+    const responseText = JSON.stringify(responsePayload, null, 2);
+    const duration_ms = Date.now() - startTime;
+
+    toolRequestsTotal.inc({ tool_name: 'query_api_knowledge', status: 'success' });
+    timer({ status: 'success' });
+
+    recordActivity({
+      tool_name: 'query_api_knowledge',
+      status: 'SUCCESS',
+      duration_ms,
+      tokens: estimateTokens(responseText),
+      details: `Knowledge Query: ${args?.query}`
+    });
+
+    return {
+      content: [{ type: 'text', text: responseText }]
+    };
+  } catch (error) {
+    return handleToolError({
+      toolName: 'query_api_knowledge',
+      error,
+      startTime,
+      timer,
+      logMessage: 'Fallo al consultar conocimiento OpenAPI',
+      prefix: 'Error en consulta de conocimiento'
     });
   }
 }

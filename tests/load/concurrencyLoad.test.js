@@ -1,16 +1,38 @@
-import { describe, it, expect } from 'vitest';
-import { docSearchHandler, docFetchHandler } from '../../src/tools/documentation/handler.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import {
+  searchDocsHandler,
+  getEndpointDocHandler,
+  getSchemaDocHandler,
+  generateIntegrationCodeHandler,
+  validatePayloadHandler,
+  queryApiKnowledgeHandler
+} from '../../src/tools/documentation/handler.js';
+import { loadAllSwaggers } from '../../src/utils/swaggerStore.js';
 
-describe('Concurrency & Load Test Suite', () => {
-  it('handles 100+ concurrent tool invocations without memory leaks or degradation', async () => {
+describe('Concurrency & Load Test Suite (Swagger Knowledge & Code Gen)', () => {
+  beforeAll(async () => {
+    await loadAllSwaggers('swaggers');
+  });
+
+  it('handles 100+ concurrent OpenAPI & Code Gen tool invocations without memory leaks', async () => {
     const concurrentAgents = 100;
     const initialMemory = process.memoryUsage().heapUsed;
 
     const tasks = Array.from({ length: concurrentAgents }, (_, i) => {
-      if (i % 2 === 0) {
-        return docSearchHandler({ query: 'arquitectura', limit: 2 });
+      const mod = i % 5;
+      if (mod === 0) {
+        return searchDocsHandler({ query: 'points', limit: 2 });
+      } else if (mod === 1) {
+        return getEndpointDocHandler({ path: '/members/{memberId}', method: 'GET' });
+      } else if (mod === 2) {
+        return generateIntegrationCodeHandler({ path: '/flights/search', method: 'GET', language: 'python' });
+      } else if (mod === 3) {
+        return validatePayloadHandler({
+          schemaName: 'AccrualRequest',
+          payload: { amountSpent: 1000, partnerId: 'VIVA', referenceNumber: '123' }
+        });
       } else {
-        return docFetchHandler({ documentId: 'arch-mcp-overview' });
+        return queryApiKnowledgeHandler({ query: 'cómo buscar vuelos' });
       }
     });
 
@@ -28,7 +50,6 @@ describe('Concurrency & Load Test Suite', () => {
     const finalMemory = process.memoryUsage().heapUsed;
     const memoryDiffMb = (finalMemory - initialMemory) / (1024 * 1024);
 
-    // Latency should be reasonable (< 3000ms for 100 parallel calls) and memory growth bounded (< 50MB)
     expect(totalDuration).toBeLessThan(3000);
     expect(memoryDiffMb).toBeLessThan(50);
   });

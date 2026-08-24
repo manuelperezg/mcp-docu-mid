@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { tools } from '../tools/index.js';
 import { register } from './metrics.js';
+import { getStoreStats, loadAllSwaggers } from './swaggerStore.js';
 
 export async function runSelfTest() {
   const startTime = Date.now();
@@ -8,7 +9,8 @@ export async function runSelfTest() {
     config: { status: 'pass' },
     tools: { status: 'pass', count: tools.length, names: tools.map(t => t.definition.name) },
     metrics: { status: 'pass' },
-    storage: { status: 'pass' }
+    storage: { status: 'pass' },
+    swaggers: { status: 'pass' }
   };
 
   try {
@@ -38,6 +40,19 @@ export async function runSelfTest() {
     if (typeof metricsStr !== 'string' || metricsStr.length === 0) {
       checks.metrics = { status: 'fail', error: 'Fallo al consultar registro de Prometheus' };
     }
+
+    // 4. Check Swagger Store
+    let stats = getStoreStats();
+    if (stats.specsCount === 0) {
+      await loadAllSwaggers();
+      stats = getStoreStats();
+    }
+    checks.swaggers = {
+      status: 'pass',
+      specsCount: stats.specsCount,
+      endpointsCount: stats.endpointsCount,
+      schemasCount: stats.schemasCount
+    };
 
     const durationMs = Date.now() - startTime;
     const isHealthy = Object.values(checks).every(c => c.status === 'pass');

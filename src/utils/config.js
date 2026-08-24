@@ -18,5 +18,6 @@ export const config = {
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '1000', 10),
   statsStorageEnabled: process.env.STATS_STORAGE_ENABLED !== 'false',
-  statsStoragePath: process.env.STATS_STORAGE_PATH || 'data/stats.json'
+  statsStoragePath: process.env.STATS_STORAGE_PATH || 'data/stats.json',
+  swaggersDir: process.env.SWAGGERS_DIR || 'swaggers'
 };

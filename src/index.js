@@ -7,6 +7,7 @@ import { logger } from './utils/logger.js';
 import { runSelfTest } from './utils/selfTest.js';
 import { config } from './utils/config.js';
 import { setupStorageLifecycle } from './utils/storage.js';
+import { loadAllSwaggers } from './utils/swaggerStore.js';
 
 export function createMcpServer() {
   const mcpServer = new Server(
@@ -36,6 +37,7 @@ export const server = createMcpServer();
 
 export async function run() {
   setupStorageLifecycle();
+  await loadAllSwaggers();
 
   if (process.argv.includes('--self-test')) {
     const report = await runSelfTest();

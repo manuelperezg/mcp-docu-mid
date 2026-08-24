@@ -1,134 +1,86 @@
-# MCP-DOC-MID
+# MCP-DOC-MID: Servidor MCP para OpenAPI y Generación de Integraciones
 
-Servidor de grado empresarial para el ecosistema **Model Context Protocol (MCP)** en Node.js (ES Modules), diseñado para gestión y consulta documental de alto rendimiento, observabilidad y resiliencia distribuida.
+Servidor MCP de grado empresarial especializado en **aprender, dereferenciar (`$ref`) y permitir que un LLM consulte especificaciones OpenAPI/Swagger y genere integraciones de código listas para producción**.
 
----
-
-## 🏛️ Arquitectura y Principios de Diseño
-
-1. **Cero Polución de `process.stdout` en STDIO**:
-   - Toda la comunicación con el cliente local MCP utiliza exclusivamente `process.stdout` para JSON-RPC.
-   - El sistema de logging utiliza **Pino** redirigido estrictamente a `process.stderr`.
-   - `dotenv.config()` se ejecuta en modo silencioso.
-2. **Doble Modo de Transporte (Dual Transport)**:
-   - **STDIO**: Conexión nativa para clientes locales (Claude Desktop, Antigravity, Cursor, CLI).
-   - **SSE / HTTP**: Servidor Express con endpoints `/sse`, `/messages`, `/metrics`, `/health` y `/dashboard`.
-3. **Session Binding & Seguridad Enterprise**:
-   - Protección contra Session Hijacking en `/messages` vinculando cada solicitud al `sessionId` validado en la conexión SSE inicial.
-   - Autenticación por Bearer Token / API Key (`x-api-key`).
-   - Rate limiting configurable con `express-rate-limit`.
-   - Hardening de cabeceras HTTP con `helmet`.
-4. **Resiliencia con Circuit Breaker y Reintentos**:
-   - Cada servicio externo u operación crítica utiliza instancias de `CircuitBreaker` (`CLOSED`, `OPEN`, `HALF_OPEN`) y reintentos exponenciales con `p-retry`.
-5. **Observabilidad y Persistencia Atómica**:
-   - Registro de métricas Prometheus (`prom-client`) en `/metrics`.
-   - Bitácora de actividad en vivo y estimación de tokens.
-   - Dashboard web embebido en `/dashboard` con autenticación Basic Auth.
-   - Persistencia atómica de estadísticas en `data/stats.json` con debouncing (300ms) y volcado síncrono al terminar el proceso.
+Utiliza `@apidevtools/swagger-parser` para dereferenciar todos los modelos y esquemas en memoria al arrancar y proporciona un conjunto de 8 herramientas para inspección, validación y generación de código en múltiples lenguajes (TypeScript, Python, JavaScript, cURL, C#).
 
 ---
 
-## 📦 Instalación y Requisitos
+## 🏛️ Características Principales
 
-- **Node.js** >= 20.0.0
-- **npm** >= 10.0.0
+1. **Lectura y Dereference Automático (`swaggers/`)**:
+   - Escaneo recursivo de archivos `.yml`, `.yaml` y `.json`.
+   - Resolución completa de referencias `$ref` en componentes, parámetros y modelos.
+2. **Generación de Integraciones de Código para LLM**:
+   - `generate_integration_code`: Genera snippets y clientes fuertemente tipados para cualquier endpoint.
+   - Soporte para TypeScript (`fetch`/`axios`), JavaScript, Python (`httpx`/`requests`), cURL y C#.
+3. **Validación y Extracción de Seguridad**:
+   - `validate_payload`: Comprobación previa de que un payload JSON cumpla con tipos y campos requeridos.
+   - `get_security_schemes`: Extracción de esquemas de autenticación (Bearer tokens, API keys, OAuth2).
+4. **Transporte Dual**:
+   - **STDIO**: Integración estándar con Claude Desktop, Antigravity, Cursor y extensiones MCP.
+   - **SSE / HTTP**: Servidor Express con `/sse`, `/messages`, `/metrics`, `/health` y `/dashboard`.
+5. **Observabilidad y Seguridad**:
+   - Logs dirigidos a `process.stderr` con **Pino**.
+   - Métricas Prometheus (`prom-client`).
+   - Session Binding y protección contra Session Hijacking.
 
-```bash
-# Clonar e instalar dependencias
-npm install
+---
+
+## 📂 Directorio de Swaggers (`swaggers/`)
+
+Coloca tus archivos OpenAPI en la carpeta `swaggers/`:
+
+```text
+swaggers/
+├── loyalty-api.yml       # Doters Loyalty API
+└── flights-api.json      # Viva Flights Booking API
 ```
 
 ---
 
-## ⚙️ Variables de Entorno
+## 🛠️ Herramientas MCP para el LLM
 
-Configura tu archivo `.env` tomando como base `.env.example`:
-
-| Variable | Descripción | Valor por Defecto |
+| Herramienta | Descripción | Parámetros Principales |
 | :--- | :--- | :--- |
-| `TRANSPORT_MODE` | Modo de transporte (`stdio`, `sse`, `http`) | `stdio` |
-| `PORT` | Puerto de escucha para modo SSE/HTTP | `3000` |
-| `LOG_LEVEL` | Nivel de logs (`debug`, `info`, `warn`, `error`) | `info` |
-| `MCP_API_KEY` | Llave secreta para autenticación de API | `default-mcp-secret-key` |
-| `ENABLE_AUTH` | Habilitar/deshabilitar autenticación (`true`/`false`) | `true` |
-| `ALLOWED_ORIGINS` | Orígenes permitidos para CORS (separados por coma o `*`) | `*` |
-| `DASHBOARD_USER` | Usuario para acceso al Dashboard web | `admin` |
-| `DASHBOARD_PASSWORD`| Contraseña para acceso al Dashboard web | `admin` |
-| `RATE_LIMIT_WINDOW_MS`| Ventana de tiempo para Rate Limit en ms | `900000` (15 min) |
-| `RATE_LIMIT_MAX` | Máximo de peticiones por ventana | `1000` |
-| `STATS_STORAGE_ENABLED`| Persistencia de estadísticas en disco | `true` |
-| `STATS_STORAGE_PATH`| Ruta del archivo de persistencia | `data/stats.json` |
+| `list_specs` | Lista todas las APIs cargadas con sus versiones, servidores y conteo de rutas. | *Ninguno* |
+| `search_docs` | Busca endpoints, modelos y descripciones por palabras clave. | `query`, `specId`, `tag`, `limit` |
+| `get_endpoint_doc` | Obtiene la especificación completa y dereferenciada de un endpoint. | `path`, `method`, `specId` |
+| `get_schema_doc` | Obtiene el modelo de datos / schema dereferenciado. | `schemaName`, `specId` |
+| `generate_integration_code` | Genera código de cliente listo para producción (TS, Python, JS, cURL, C#). | `path`, `method`, `language`, `clientType`, `specId` |
+| `get_security_schemes` | Obtiene esquemas de autenticación y cabeceras requeridas. | `specId` |
+| `validate_payload` | Valida un payload JSON contra el schema de un endpoint antes de invocarlo. | `schemaName`, `payload`, `specId` |
+| `query_api_knowledge` | Sintetiza respuestas a preguntas de negocio o arquitectura sobre las APIs. | `query`, `specId` |
 
 ---
 
-## 🚀 Modos de Ejecución
+## 🚀 Inicio Rápido
 
-### 1. Modo STDIO (CLI Local)
 ```bash
+# Instalar dependencias
+npm install
+
+# Autodiagnóstico en runtime (<5ms)
+npm run self-test
+
+# Iniciar en modo STDIO
 npm start
-```
 
-### 2. Modo SSE / HTTP (Servidor Web)
-```bash
+# Iniciar en modo SSE/HTTP
 TRANSPORT_MODE=sse PORT=3000 npm start
 ```
 
-### 3. Autodiagnóstico en Runtime (<100ms)
-```bash
-npm run self-test
-```
-
-### 4. Inspector de MCP
-```bash
-npm run inspect
-```
-
 ---
 
-## 🛠️ Herramientas Disponibles
-
-### 1. `doc_search`
-Busca artículos y especificaciones en la base documental.
-- **Parámetros**:
-  - `query` (*string, requerido*): Término o palabras clave a buscar.
-  - `category` (*string, opcional*): Categoría temática (`api`, `architecture`, `deployment`, `guides`).
-  - `limit` (*integer, opcional*): Límite de resultados (1 a 20, default: 5).
-
-### 2. `doc_fetch`
-Obtiene el contenido completo y metadatos de un documento específico.
-- **Parámetros**:
-  - `documentId` (*string, requerido*): ID único o ruta del documento.
-
----
-
-## 🧪 Pruebas y Benchmarks
-
-El proyecto cuenta con una pirámide de pruebas con umbral de cobertura mínimo del 85%:
+## 🧪 Pruebas y Rendimiento
 
 ```bash
-# Ejecutar todas las pruebas unitarias, de contrato e integración
-npm test
-
-# Ejecutar con reporte de cobertura de código
+# Suite completa con reporte de cobertura (>= 85%)
 npm run test:coverage
 
-# Ejecutar pruebas de carga y concurrencia (100+ agentes)
+# Pruebas de carga (100 agentes concurrentes)
 npm run test:load
 
-# Ejecutar benchmark de rendimiento y cálculo de percentiles (p50, p90, p99)
+# Benchmark de latencia y throughput
 npm run benchmark
-
-# Pipeline de CI completo
-npm run test:ci
-```
-
----
-
-## 🐳 Docker
-
-Construcción y ejecución con Docker multi-stage:
-
-```bash
-docker build -t mcp-doc-mid:latest .
-docker run -p 3000:3000 -e TRANSPORT_MODE=sse mcp-doc-mid:latest
 ```
