@@ -15,7 +15,7 @@ export const searchDocsToolDefinition = {
     properties: {
       query: {
         type: 'string',
-        description: 'Término de búsqueda (ej. "socio", "flights", "points", "booking", "memberId").'
+        description: 'Término de búsqueda (ej. "balances", "login", "points", "memberId", "accrual").'
       },
       specId: {
         type: 'string',
@@ -23,7 +23,7 @@ export const searchDocsToolDefinition = {
       },
       tag: {
         type: 'string',
-        description: 'Filtrar por etiqueta/tag específico (opcional, ej. "Members", "Flights").'
+        description: 'Filtrar por etiqueta/tag específico (opcional, ej. "MemberApi", "Security", "CarRental").'
       },
       limit: {
         type: 'integer',
@@ -42,7 +42,7 @@ export const getEndpointDocToolDefinition = {
     properties: {
       path: {
         type: 'string',
-        description: 'Ruta del endpoint (ej. "/members/{memberId}", "/flights/search").'
+        description: 'Ruta del endpoint (ej. "/v1/members/{memberId}/balances", "/v1/security/login").'
       },
       method: {
         type: 'string',
@@ -66,7 +66,7 @@ export const getSchemaDocToolDefinition = {
     properties: {
       schemaName: {
         type: 'string',
-        description: 'Nombre del schema o componente (ej. "MemberProfile", "FlightOffer", "AccrualRequest").'
+        description: 'Nombre del schema o componente (ej. "LoginRequestDto", "MemberBalanceResponseDto").'
       },
       specId: {
         type: 'string',
@@ -85,7 +85,7 @@ export const generateIntegrationCodeToolDefinition = {
     properties: {
       path: {
         type: 'string',
-        description: 'Ruta del endpoint a integrar (ej. "/members/{memberId}/points/accrue", "/flights/search").'
+        description: 'Ruta del endpoint a integrar (ej. "/v1/members/{memberId}/balances", "/v1/security/login").'
       },
       method: {
         type: 'string',
@@ -133,7 +133,7 @@ export const validatePayloadToolDefinition = {
     properties: {
       schemaName: {
         type: 'string',
-        description: 'Nombre del schema a validar contra (ej. "AccrualRequest", "MemberProfile").'
+        description: 'Nombre del schema a validar contra (ej. "LoginRequestDto", "MemberBalanceResponseDto").'
       },
       payload: {
         type: 'object',

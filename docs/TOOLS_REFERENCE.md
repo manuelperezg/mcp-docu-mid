@@ -30,35 +30,19 @@ Retorna un listado consolidado de todas las especificaciones OpenAPI/Swagger (`.
 ### Ejemplo de Respuesta
 ```json
 {
-  "totalSpecs": 2,
+  "totalSpecs": 1,
   "specs": [
     {
-      "id": "flights-api",
-      "fileName": "flights-api.json",
-      "filePath": "swaggers/flights-api.json",
-      "title": "Viva Flights Booking API",
-      "version": "1.8.0",
-      "description": "API de consulta de vuelos, tarifas, disponibilidad y confirmación de itinerarios.",
-      "openapiVersion": "3.0.3",
-      "servers": [
-        { "url": "https://api.vivaaerobus.com/v1", "description": "API Gateway" }
-      ],
-      "pathsCount": 1,
-      "schemasCount": 3
-    },
-    {
-      "id": "loyalty-api",
-      "fileName": "loyalty-api.yml",
-      "filePath": "swaggers/loyalty-api.yml",
-      "title": "Doters Loyalty API",
-      "version": "2.4.0",
-      "description": "API de gestión de puntos, recompensas y niveles de lealtad para socios Doters.",
-      "openapiVersion": "3.0.3",
-      "servers": [
-        { "url": "https://api.doters.com/v2", "description": "Servidor de Producción" }
-      ],
-      "pathsCount": 2,
-      "schemasCount": 5
+      "id": "middleware-api",
+      "fileName": "middleware-api.json",
+      "filePath": "swaggers/middleware-api.json",
+      "title": "Doters API - Internal",
+      "version": "2.0",
+      "description": "API interna de middleware para servicios de socios, transacciones, balances y aliados Doters.",
+      "openapiVersion": "3.0.0",
+      "servers": [],
+      "pathsCount": 110,
+      "schemasCount": 221
     }
   ]
 }
@@ -72,9 +56,9 @@ Retorna un listado consolidado de todas las especificaciones OpenAPI/Swagger (`.
 Realiza búsquedas contextuales por palabras clave en todos los endpoints, tags, descripciones y modelos de datos indexados.
 
 ### Parámetros
-- `query` (*string, requerido*): Término de búsqueda (ej. `"points"`, `"flights"`, `"memberId"`).
-- `specId` (*string, opcional*): Limitar la búsqueda a una API específica (ej. `"loyalty-api"`).
-- `tag` (*string, opcional*): Filtrar por etiqueta o tag (ej. `"Members"`, `"Flights"`).
+- `query` (*string, requerido*): Término de búsqueda (ej. `"balances"`, `"login"`, `"memberId"`).
+- `specId` (*string, opcional*): Limitar la búsqueda a una API específica (ej. `"middleware-api"`).
+- `tag` (*string, opcional*): Filtrar por etiqueta o tag (ej. `"MemberApi"`, `"Security"`, `"CarRental"`).
 - `limit` (*integer, opcional*): Número máximo de resultados (por defecto `10`, máx `50`).
 
 ---
@@ -85,9 +69,9 @@ Realiza búsquedas contextuales por palabras clave en todos los endpoints, tags,
 Recupera la especificación completa de un endpoint con **todos los `$ref` dereferenciados en línea**, incluyendo parámetros de ruta, parámetros query, cuerpo de la petición (`requestBody`) y códigos de respuesta con sus esquemas JSON.
 
 ### Parámetros
-- `path` (*string, requerido*): Ruta del endpoint (ej. `"/members/{memberId}/points/accrue"`).
+- `path` (*string, requerido*): Ruta del endpoint (ej. `"/v1/members/{memberId}/balances"`, `"/v1/security/login"`).
 - `method` (*string, opcional*): Método HTTP (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`). Por defecto `GET`.
-- `specId` (*string, opcional*): ID de la especificación a consultar.
+- `specId` (*string, opcional*): ID de la especificación a consultar (ej. `"middleware-api"`).
 
 ---
 
@@ -97,7 +81,7 @@ Recupera la especificación completa de un endpoint con **todos los `$ref` deref
 Recupera la definición completa de un modelo de datos o schema (`components.schemas.*` o `definitions.*`) totalmente dereferenciado (propiedades, tipos, campos obligatorios, ejemplos y enums).
 
 ### Parámetros
-- `schemaName` (*string, requerido*): Nombre del schema (ej. `"MemberProfile"`, `"FlightOffer"`).
+- `schemaName` (*string, requerido*): Nombre del schema (ej. `"LoginRequestDto"`, `"MemberBalanceResponseDto"`).
 - `specId` (*string, opcional*): ID de la especificación.
 
 ---

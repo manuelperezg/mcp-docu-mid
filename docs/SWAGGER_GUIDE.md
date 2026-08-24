@@ -21,8 +21,7 @@ El motor `@apidevtools/swagger-parser` soporta:
    swaggers/
    ├── payments/
    │   └── stripe-integration.yml
-   ├── loyalty-api.yml
-   └── flights-api.json
+   └── middleware-api.json
    ```
 
 2. **Resolución Automática de `$ref` (Dereferencing)**:
@@ -41,7 +40,7 @@ El motor `@apidevtools/swagger-parser` soporta:
 
 ## ⚡ Estrategia de Carga Hiper-Rápida (Snapshot Caching)
 
-Para especificaciones OpenAPI voluminosas (como `middleware-internal.json` de 260KB+ con cientos de endpoints y schemas):
+Para especificaciones OpenAPI voluminosas (como `middleware-api.json` de 260KB+ con cientos de endpoints y schemas):
 1. **Validación por Hash SHA-256**: Al leer cada archivo, se genera un hash criptográfico basado en su contenido y timestamp de modificación (`mtimeMs`).
 2. **Snapshot en `.cache/swaggers/`**: El resultado del dereference completo se guarda como un snapshot JSON pre-calculado.
 3. **Hidratación en < 2 ms**: En inicios subsecuentes, el servidor verifica el hash y restaura directamente la memoria en **1 a 3 ms**, evitando el costo de CPU de parsear el AST de OpenAPI repetidamente.

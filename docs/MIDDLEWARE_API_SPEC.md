@@ -1,6 +1,6 @@
-# Especificación Estructural: Doters API - Internal (`middleware-internal.json`)
+# Especificación Estructural: Doters API - Internal (`middleware-api.json`)
 
-Este documento presenta el análisis técnico y estructural exhaustivo de la especificación de referencia **Doters API - Internal** ([swaggers/middleware-internal.json](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/swaggers/middleware-internal.json)), la cual define la arquitectura de servicios, contratos de datos, envolturas de respuesta y dominios de negocio que gobiernan la plataforma.
+Este documento presenta el análisis técnico y estructural exhaustivo de la especificación de referencia **Doters API - Internal** ([swaggers/middleware-api.json](file:///c:/Users/Manuel/Documents/vivaaerobus/Doters/MCP/mcp-docu-mid/swaggers/middleware-api.json)), la cual define la arquitectura de servicios, contratos de datos, envolturas de respuesta y dominios de negocio que gobiernan la plataforma.
 
 ---
 
